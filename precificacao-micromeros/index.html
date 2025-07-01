@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Sistema de Precificação</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #191919;
+            color: #f0efec;
+        }
+
+        .logo {
+            width: 180px;
+            height: auto;
+            margin: 2rem auto;
+        }
+
+        .highlight {
+            color: #ccff0c;
+        }
+
+        .btn-start, .download-button {
+            background-color: #ccff0c;
+            color: #191919;
+            font-weight: bold;
+            padding: 0.75rem 2rem;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s ease-in-out;
+        }
+
+        .btn-start:hover, .download-button:hover {
+            background-color: #e9ff4c;
+        }
+
+        .option-button {
+            background-color: #2a2a2a;
+            color: #f0efec;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            border: 1px solid #333;
+            transition: all 0.2s ease-in-out;
+        }
+
+        .option-button:hover {
+            background-color: #3a3a3a;
+        }
+
+        .option-button.selected {
+            background-color: #ccff0c;
+            color: #191919;
+            font-weight: bold;
+            box-shadow: 0 4px 10px rgba(204, 255, 12, 0.4);
+        }
+
+        .reset-button {
+            background-color: #ccff0c;
+            color: #191919;
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+        }
+
+        .reset-button:hover {
+            background-color: #eaff5c;
+        }
+
+        input[type="number"] {
+            appearance: none;
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: 1px solid #ccc;
+            border-radius: 0.5rem;
+            background-color: #f9f9f9;
+            color: #111;
+            font-size: 1rem;
+            transition: border 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+        }
+
+        input[type="number"]:focus {
+            outline: none;
+            border-color: #888;
+            box-shadow: 0 0 0 3px rgba(150, 150, 150, 0.2);
+        }
+
+        /* Preço refinado */
+        .price-display {
+            background-color: #2b2b2b;
+            color: #f0efec;
+            padding: 2rem;
+            border-radius: 1rem;
+            margin-top: 2rem;
+            font-size: 1.5rem;
+            font-weight: 500;
+            box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+            text-align: center;
+            border: 1px solid #444;
+        }
+
+        .price-display strong {
+            display: block;
+            font-size: 2rem;
+            font-weight: bold;
+            margin-top: 0.5rem;
+            color: #ffffff;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen px-4">
+
+    <img src="./logotipo_AS3_branco.png" alt="Logo da empresa" class="logo"/>
+
+    <div id="intro-card" class="bg-[#1f1f1f] rounded-xl shadow-lg max-w-xl w-full text-center p-8">
+        <h1 class="text-3xl font-bold mb-4"><span class="highlight">Vamos começar</span> sua precificação</h1>
+        <p class="mb-6 text-lg">Você responderá algumas perguntas simples para gerarmos uma estimativa personalizada do seu projeto de instalação de sensores.</p>
+        <button id="start-button" class="btn-start">Começar</button>
+    </div>
+
+    <div id="form-container" class="bg-[#1f1f1f] rounded-xl shadow-lg max-w-xl w-full text-center p-8 mt-10 hidden">
+        <div id="step-content">
+            <h2 class="text-2xl font-bold mb-6 highlight" id="step-title"></h2>
+            <div id="options-container" class="grid grid-cols-1 md:grid-cols-1 gap-4 mb-8"></div>
+            <div class="mb-6 hidden" id="quantity-container">
+                <label for="sensor-quantity" class="block mb-2 text-lg">Quantos <strong>pontos a serem medidos</strong>?</label>
+                <input type="number" id="sensor-quantity" class="w-full p-2 rounded text-black" placeholder="Ex: 5" min="1" value="1" />
+            </div>
+        </div>
+        <div id="price-result" class="price-display hidden"></div>
+        <button id="download-button" class="download-button mt-4 hidden">Baixar Proposta (PDF)</button>
+        <button id="reset-button" class="reset-button mt-4 hidden">Reiniciar</button>
+    </div>
+<script>
+    const pricingData = {
+        quantidade_pontos: {
+            title: 'Quantos pontos serão medidos?',
+            type: 'input'
+        },
+        local_instalacao: {
+            title: 'Qual o local da instalação?',
+            options: {
+                industrial: { label: 'Industrial', modifier: 1.30 },
+                comercial: { label: 'Buildings', modifier: 1.15 },
+                residencial: { label: 'Infraestrutura', modifier: 1.00 }
+            }
+        },
+        tipo_sensor: {
+            title: 'Tipo de Sensor',
+            options: {
+                ultrassonico: { label: 'Ultrassônico', basePrice: 9997 },
+                invasivo: { label: 'Invasivo', basePrice: 1198 },
+                pulso: { label: 'Pulso', basePrice: 9999 }
+            }
+        },
+        diametro_tubulacao: {
+            title: 'Diâmetro da Tubulação',
+            options: {
+                pequeno: { label: 'Pequeno (até 2")', modifier: 1.00 },
+                medio: { label: 'Médio (2" a 6")', modifier: 1.05 },
+                grande: { label: 'Grande (acima de 6")', modifier: 1.10 }
+            }
+        },
+        material_tubo: {
+            title: 'Material do Tubo',
+            options: {
+                aco_carbono: { label: 'Aço Carbono', modifier: 1.00 },
+                aco_inox: { label: 'Aço Inoxidável', modifier: 1.10 },
+                pvc_cpvc: { label: 'PVC/CPVC', modifier: 1.00 },
+                cobre: { label: 'Cobre', modifier: 1.05 },
+                outros: { label: 'Outros', modifier: 1.15 }
+            }
+        },
+        tipo_alimentacao: {
+            title: 'Tipo de Alimentação',
+            options: {
+                bateria: { label: 'Bateria', modifier: 1.00 },
+                rede_eletrica: { label: 'Rede Elétrica (110V/220V)', modifier: 1.05 },
+                painel_solar: { label: 'Painel Solar', modifier: 1.15 }
+            }
+        },
+        conectividade: {
+            title: 'Conectividade',
+            options: {
+                conversor_as3: { label: 'Conversor', modifier: 1.00 },
+                outro: { label: 'Outro', modifier: 1.20 }
+            }
+        }
+    };
+
+    const steps = [
+        'quantidade_pontos',
+        'local_instalacao',
+        'tipo_sensor',
+        'diametro_tubulacao',
+        'material_tubo',
+        'tipo_alimentacao',
+        'conectividade'
+    ];
+
+    let currentStepIndex = 0;
+    const selectedOptions = {};
+
+    const startButton = document.getElementById('start-button');
+    const introCard = document.getElementById('intro-card');
+    const formContainer = document.getElementById('form-container');
+    const stepTitleElement = document.getElementById('step-title');
+    const optionsContainer = document.getElementById('options-container');
+    const priceResultElement = document.getElementById('price-result');
+    const resetButton = document.getElementById('reset-button');
+    const downloadButton = document.getElementById('download-button');
+
+    startButton.addEventListener('click', () => {
+        introCard.classList.add('hidden');
+        formContainer.classList.remove('hidden');
+        renderStep();
+    });
+
+    function renderStep() {
+        if (currentStepIndex >= steps.length) {
+            calculatePrice();
+            return;
+        }
+
+        const currentStepKey = steps[currentStepIndex];
+        const stepData = pricingData[currentStepKey];
+
+        stepTitleElement.textContent = stepData.title;
+        optionsContainer.innerHTML = '';
+        priceResultElement.classList.add('hidden');
+        resetButton.classList.add('hidden');
+        downloadButton.classList.add('hidden');
+
+        if (stepData.type === 'input') {
+            const input = document.createElement('input');
+            input.type = 'number';
+            input.min = 1;
+            input.placeholder = 'Ex: 5';
+            input.classList.add('w-full', 'p-2', 'rounded', 'text-black');
+            input.value = selectedOptions[currentStepKey] || 1;
+
+            const button = document.createElement('button');
+            button.textContent = 'Próximo';
+            button.classList.add('btn-start', 'mt-4');
+            button.addEventListener('click', () => {
+                selectedOptions[currentStepKey] = parseInt(input.value) || 1;
+                currentStepIndex++;
+                renderStep();
+            });
+
+            optionsContainer.appendChild(input);
+            optionsContainer.appendChild(button);
+        } else {
+            for (const optionKey in stepData.options) {
+                const option = stepData.options[optionKey];
+                const button = document.createElement('button');
+                button.textContent = option.label;
+                button.classList.add('option-button');
+                button.dataset.optionKey = optionKey;
+
+                if (selectedOptions[currentStepKey] === optionKey) {
+                    button.classList.add('selected');
+                }
+
+                button.addEventListener('click', () => selectOption(currentStepKey, optionKey));
+                optionsContainer.appendChild(button);
+            }
+        }
+    }
+
+    function selectOption(stepKey, optionKey) {
+        selectedOptions[stepKey] = optionKey;
+        currentStepIndex++;
+        renderStep();
+    }
+
+    function calculatePrice() {
+        let finalPrice = 0;
+        let basePriceSet = false;
+        let quantity = parseInt(selectedOptions['quantidade_pontos']) || 1;
+
+        for (const stepKey of steps) {
+            if (stepKey === 'quantidade_pontos') continue;
+
+            const selectedOptionKey = selectedOptions[stepKey];
+            const optionData = pricingData[stepKey].options[selectedOptionKey];
+
+            if (optionData) {
+                if (stepKey === 'tipo_sensor') {
+                    finalPrice = optionData.basePrice;
+                    basePriceSet = true;
+                } else if (basePriceSet && optionData.modifier) {
+                    finalPrice *= optionData.modifier;
+                }
+            }
+        }
+
+        finalPrice *= quantity;
+        stepTitleElement.textContent = 'Preço Estimado';
+        optionsContainer.innerHTML = '';
+        priceResultElement.innerHTML = `Valor total estimado:<strong>R$ ${finalPrice.toFixed(2)}</strong>`;
+        priceResultElement.classList.remove('hidden');
+        resetButton.classList.remove('hidden');
+        downloadButton.classList.remove('hidden');
+    }
+
+    resetButton.addEventListener('click', () => {
+        currentStepIndex = 0;
+        Object.keys(selectedOptions).forEach(key => delete selectedOptions[key]);
+        renderStep();
+    });
+
+    // --- Start of Enhanced PDF Generation Code ---
+    downloadButton.addEventListener('click', async () => {
+        const { jsPDF } = window.jspdf;
+        const doc = new jsPDF('p', 'mm', 'a4'); // Specify A4 for consistent sizing
+
+        const quantity = selectedOptions['quantidade_pontos'] || 1;
+        const total = priceResultElement.textContent;
+        const valorTotal = total.split(':')[1]?.trim() || "R$ 0,00";
+
+        const logoUrl = "./logotipo_AS3_branco.png";
+        const signatureSvgUrl = "./assinatura.jpg"; // New SVG URL
+
+        // Function to load image as Base64 with robust error handling
+        const loadImageAsBase64 = async (url) => {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) {
+                    console.warn(`Failed to load image from ${url}: ${res.status} ${res.statusText}. Using placeholder or skipping.`);
+                    return null; // Return null if image fails to load
+                }
+                const blob = await res.blob();
+                return new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+            } catch (error) {
+                console.error(`Error loading image ${url}:`, error);
+                return null; // Return null on any error
+            }
+        };
+
+        const logoBase64 = await loadImageAsBase64(logoUrl);
+        const signatureSvgBase64 = await loadImageAsBase64(signatureSvgUrl); // Load signature SVG
+
+        // --- Colors (RGB) ---
+        const color_primary = [25, 25, 25]; // #191919 (Used for darkest elements: header, footer, most text)
+        const color_title_accent = [204, 255, 12]; // #ccff0c (Used for main titles and section headers)
+        const color_text_light = [240, 239, 236]; // #f0efec (Used for text on dark backgrounds)
+        const color_section_bg = [245, 245, 245]; // A very light grey for section title backgrounds
+
+        doc.setFont('helvetica'); // Set a default font for the document
+
+        // --- Header Section ---
+        doc.setFillColor(color_primary[0], color_primary[1], color_primary[2]);
+        doc.rect(0, 0, 210, 25, 'F'); // Dark header banner (A4 width 210mm)
+
+        if (logoBase64) {
+            doc.addImage(logoBase64, 'PNG', 15, 7, 35, 12);
+        } else {
+            doc.setFontSize(14);
+            doc.setTextColor(color_text_light[0], color_text_light[1], color_text_light[2]); // Light text for fallback logo
+            doc.text("AS3", 15, 15);
+        }
+
+        doc.setFontSize(18);
+        doc.setTextColor(color_title_accent[0], color_title_accent[1], color_title_accent[2]); // Accent color for header title
+        doc.text("PROPOSTA COMERCIAL", 200, 15, null, null, 'right');
+
+        // --- Main Title (below header) ---
+        doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Set title color to #191919
+        doc.setFontSize(26);
+        doc.setFont(undefined, 'bold');
+        doc.text("Proposta de Projeto", 105, 45, null, null, 'center');
+
+        let currentY = 60; // Starting Y position for content
+
+        // --- Function to draw section titles ---
+        const drawSectionTitle = (titleText, yPosition) => {
+            doc.setFillColor(color_section_bg[0], color_section_bg[1], color_section_bg[2]); // Light background for section title
+            doc.rect(0, yPosition, 210, 8, 'F');
+            doc.setFontSize(14);
+            doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Subtitle text color to #191919
+            doc.text(titleText, 20, yPosition + 6);
+            doc.setFont(undefined, 'normal');
+            return yPosition + 12; // Reduced spacing after title
+        };
+
+        // --- Escopo do Projeto Section ---
+        currentY = drawSectionTitle("Escopo do Projeto", currentY);
+        doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Dark text for content on white background
+        doc.setFontSize(11);
+        doc.text(
+            "Instalação de sensores de medição conforme especificações abaixo.",
+            20, currentY, { maxWidth: 170 }
+        );
+        currentY += 7;
+        doc.text(
+            "Projeto contempla fornecimento, instalação e configuração dos equipamentos.",
+            20, currentY, { maxWidth: 170 }
+        );
+        currentY += 12; // Reduced spacing
+
+        // --- Investimento e Forma de Pagamento Section ---
+        currentY = drawSectionTitle("Investimento e Forma de Pagamento", currentY);
+        doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Dark text for content
+        doc.setFontSize(11);
+
+        // Investment
+        doc.setFont(undefined, 'bold');
+        doc.text("Investimento:", 20, currentY);
+        doc.setFont(undefined, 'normal');
+        
+        let extensoValor = '';
+        try {
+            extensoValor = extenso(valorTotal);
+        } catch (e) {
+            console.error("Error converting value to extenso:", e);
+            extensoValor = 'Erro ao converter valor';
+        }
+        doc.text(`${valorTotal} (${extensoValor})`, 20, currentY + 6);
+        currentY += 12; // Adjusted spacing
+
+        // Forma de Pagamento
+        doc.setFont(undefined, 'bold');
+        doc.text("Forma de Pagamento:", 20, currentY); // Moved to new line
+        doc.setFont(undefined, 'normal');
+        doc.text("50% na assinatura | 50% na entrega", 20, currentY + 6);
+        currentY += 18; // Adjusted spacing
+
+        // --- Prazos e Etapas do Projeto Section (Improved Timeline) ---
+        currentY = drawSectionTitle("Prazos e Etapas do Projeto", currentY);
+        
+        const etapas = [
+            { name: "Proposta", duration: "1 dia" },
+            { name: "Assinatura", duration: "3 dias" },
+            { name: "Instalação", duration: "7 dias" },
+            { name: "Configuração", duration: "2 dias" },
+            { name: "Entrega Final", duration: "1 dia" }
+        ];
+
+        const timelineStartX = 20;
+        const totalTimelineWidth = 170;
+        const segmentWidth = totalTimelineWidth / etapas.length;
+        const timelineHeight = 18; // Height of each stage block
+        const textOffset = 5; // Vertical offset for text within the block
+
+        doc.setFontSize(9);
+        doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Dark text for timeline stages
+
+        for (let i = 0; i < etapas.length; i++) {
+            const etapa = etapas[i];
+            const xPos = timelineStartX + (i * segmentWidth);
+            
+            // Highlight the first stage "Proposta"
+            if (i === 0) {
+                doc.setFillColor(color_title_accent[0], color_title_accent[1], color_title_accent[2]); // Accent background for "Proposta"
+                doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Dark text on accent background
+                doc.setDrawColor(color_primary[0], color_primary[1], color_primary[2]); // Dark border for "Proposta"
+            } else {
+                doc.setFillColor(color_text_light[0], color_text_light[1], color_text_light[2]); // Light background for other stages
+                doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Dark text on light background
+                doc.setDrawColor(color_title_accent[0], color_title_accent[1], color_title_accent[2]); // Accent border for other stages
+            }
+            
+            doc.setLineWidth(0.5);
+            doc.rect(xPos, currentY, segmentWidth - 5, timelineHeight, 'FD'); // Rectangle for stage, with small gap
+
+            // Draw text
+            doc.text(etapa.name, xPos + (segmentWidth - 5) / 2, currentY + textOffset + 2, null, null, 'center');
+            doc.setFontSize(7); // Smaller font for duration
+            doc.text(`(${etapa.duration})`, xPos + (segmentWidth - 5) / 2, currentY + textOffset + 9, null, null, 'center');
+            doc.setFontSize(9); // Reset font size
+
+            // Draw connecting arrow if not the last stage
+            if (i < etapas.length - 1) {
+                const arrowStart = xPos + segmentWidth - 5;
+                const arrowEnd = xPos + segmentWidth + 1; // Slightly overlap to make a clean arrow
+                const arrowMidY = currentY + timelineHeight / 2;
+                
+                doc.setDrawColor(color_title_accent[0], color_title_accent[1], color_title_accent[2]); // Accent color for arrow
+                doc.setLineWidth(0.8);
+                doc.line(arrowStart, arrowMidY, arrowEnd, arrowMidY);
+                
+                // Arrowhead (triangle pointing right)
+                doc.triangle(arrowEnd, arrowMidY, arrowEnd - 3, arrowMidY - 2, arrowEnd - 3, arrowMidY + 2, 'F');
+            }
+        }
+        currentY += timelineHeight + 15; // Adjusted spacing
+
+        // --- Validade da Proposta Section ---
+        currentY = drawSectionTitle("Validade da Proposta", currentY);
+        doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]);
+        doc.setFontSize(11);
+        doc.text("Esta proposta tem validade de 15 (quinze) dias úteis a partir da data de emissão.", 20, currentY);
+        currentY += 15;
+
+        // --- Director Signature Section ---
+        // Moved the signature calculation to before adding a new page
+        // to ensure it always tries to fit on the current page first.
+        const signatureBlockDesiredY = doc.internal.pageSize.getHeight() - 95; // Try to place signature block above footer
+        
+        // If currentY is already past the desired signature position, add a new page.
+        // Or if there's not enough vertical space for the signature block + footer, add a new page.
+        // Assuming signature block is roughly 45mm tall and footer is 40mm.
+        const minimumSpaceNeeded = 45 + 40; 
+        if ((currentY + minimumSpaceNeeded) > doc.internal.pageSize.getHeight()) {
+            doc.addPage();
+            currentY = 20; // Reset Y position for new page
+        }
+
+        doc.setFontSize(11);
+        doc.setTextColor(color_primary[0], color_primary[1], color_primary[2]); // Dark text for signature
+        const signatureX = 20; // X position for signature block
+
+        const today = new Date();
+        const formattedDate = today.toLocaleDateString('pt-BR', {day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Sao_Paulo'});
+        doc.text(`Rio de Janeiro, RJ - Brasil, ${formattedDate}`, signatureX, currentY);
+        currentY += 8; // Reduced spacing
+
+        // Add Signature SVG
+       if (signatureSvgBase64) {
+            const svgWidth = 50;
+            const svgHeight = 18; // Reduzido para economizar espaço
+            doc.addImage(signatureSvgBase64, 'SVG', signatureX, currentY, svgWidth, svgHeight);
+            currentY += svgHeight + 2;
+        } else {
+            doc.line(signatureX, currentY + 10, signatureX + 80, currentY + 10); // Fallback line if SVG fails
+            currentY += 15; // Space for fallback line
+        }
+        
+        doc.setFont(undefined, 'bold');
+        doc.text("Átila Santos", signatureX, currentY);
+        currentY += 5;
+        doc.text("Diretor Comercial - AS3", signatureX, currentY);
+        currentY += 5;
+        doc.setFont(undefined, 'normal');
+        doc.text("Telefone: (21) 98652-1094", signatureX, currentY);
+        currentY += 5;
+        doc.textWithLink("Email: atila.santos@as3group.com", signatureX, currentY, { url: "mailto:atila.santos@as3group.com" });
+        currentY += 15; // Space after signature block
+
+
+        // --- Footer Section ---
+        const footerY = doc.internal.pageSize.getHeight() - 40; // Fixed position from bottom
+        const leftMargin = 20; // Define left margin for footer text
+
+        doc.setFillColor(color_primary[0], color_primary[1], color_primary[2]);
+        doc.rect(0, footerY, 210, 40, 'F'); // Footer banner
+
+        doc.setFontSize(10);
+        doc.setTextColor(color_text_light[0], color_text_light[1], color_text_light[2]); // Light text for footer
+
+        let footerCurrentY = footerY + 10;
+
+        // All elements aligned to the left, one after the other
+        doc.text(`Rua ouro preto, 93 - Quintino Bocaiuva, RJ - Brasil`, leftMargin, footerCurrentY);
+        footerCurrentY += 7; // Line spacing
+
+        doc.textWithLink("(21) 95910-0007", leftMargin, footerCurrentY, { url: "tel:+552195910007" });
+        footerCurrentY += 7; // Line spacing
+
+        doc.textWithLink("vendas@as3group.com", leftMargin, footerCurrentY, { url: "mailto:vendas@as3group.com" });
+        footerCurrentY += 7; // Line spacing
+
+        doc.textWithLink("www.as3group.com", leftMargin, footerCurrentY, { url: "https://www.as3group.com" });
+        footerCurrentY += 7; // Line spacing (space before logo)
+
+        // Logo in footer, last
+    const footerLogoWidth = 35;
+    const footerLogoHeight = 12;
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    if (logoBase64) {
+       const logoX = pageWidth - footerLogoWidth - 20; // 20mm de margem lateral
+    const logoY = footerY + ((40 - footerLogoHeight) / 2); // Centraliza verticalmente no rodapé
+    doc.addImage(logoBase64, 'PNG', logoX, logoY, footerLogoWidth, footerLogoHeight);
+    } else {
+        doc.setFontSize(12);
+        doc.text("AS3", pageWidth - 25, footerCurrentY); // fallback logo
+    }
+
+        doc.save("proposta_comercial_as3.pdf");
+    });
+    // --- End of Enhanced PDF Generation Code ---
+
+    // NOTE: This extenso function is required for the PDF generation.
+    function extenso(valor) {
+        const cleanValue = parseFloat(valor.replace('R$', '').replace(',', '.')).toFixed(2);
+        const [integerPart, decimalPart] = cleanValue.split('.');
+
+        let extensoString = '';
+        const numbers = {
+            0: 'zero', 1: 'um', 2: 'dois', 3: 'três', 4: 'quatro', 5: 'cinco',
+            6: 'seis', 7: 'sete', 8: 'oito', 9: 'nove', 10: 'dez',
+            11: 'onze', 12: 'doze', 13: 'treze', 14: 'catorze', 15: 'quinze',
+            16: 'dezesseis', 17: 'dezessete', 18: 'dezoito', 19: 'dezenove',
+            20: 'vinte', 30: 'trinta', 40: 'quarenta', 50: 'cinquenta',
+            60: 'sessenta', 70: 'setenta', 80: 'oitenta', 90: 'noventa',
+            100: 'cem', 200: 'duzentos', 300: 'trezentos', 400: 'quatrocentos',
+            500: 'quinhentos', 600: 'seiscentos', 700: 'setecentos', 800: 'oitocentos',
+            900: 'novecentos'
+        };
+
+        const thousands = ['', 'mil', 'milhões', 'bilhões'];
+
+        function convertGroup(num) {
+            if (num === 0) return '';
+            let s = '';
+            let hundreds = Math.floor(num / 100);
+            let tens = num % 100;
+
+            if (hundreds > 0) {
+                if (hundreds === 1 && tens === 0) {
+                    s += 'cem';
+                } else if (hundreds === 1) {
+                    s += 'cento';
+                } else {
+                    s += numbers[hundreds * 100];
+                }
+            }
+
+            if (tens > 0) {
+                if (s !== '') s += ' e ';
+                if (tens < 20) {
+                    s += numbers[tens];
+                } else {
+                    s += numbers[Math.floor(tens / 10) * 10];
+                    if (tens % 10 !== 0) {
+                        s += ' e ' + numbers[tens % 10];
+                    }
+                }
+            }
+            return s;
+        }
+
+        let num = parseInt(integerPart);
+        if (num === 0) {
+            extensoString = 'zero';
+        } else {
+            let i = 0;
+            let tempExtenso = '';
+            while (num > 0) {
+                let group = num % 1000;
+                if (group > 0) {
+                    let groupExtenso = convertGroup(group);
+                    if (thousands[i] === 'mil' && group === 1 && num < 2000) {
+                        if (tempExtenso !== '') tempExtenso = ' ' + tempExtenso;
+                        tempExtenso = thousands[i] + tempExtenso;
+                    } else {
+                        if (tempExtenso !== '') tempExtenso = ' ' + tempExtenso;
+                        tempExtenso = groupExtenso + (thousands[i] ? ' ' + thousands[i] : '') + tempExtenso;
+                    }
+
+                }
+                num = Math.floor(num / 1000);
+                i++;
+            }
+            extensoString = tempExtenso.trim();
+        }
+
+        let centsExtenso = '';
+        const cents = parseInt(decimalPart);
+        if (cents > 0) {
+            centsExtenso = convertGroup(cents);
+            centsExtenso = centsExtenso + (cents === 1 ? ' centavo' : ' centavos');
+        }
+
+        let finalExtenso = extensoString + (parseInt(integerPart) === 1 && cents === 0 ? ' real' : ' reais');
+
+        if (centsExtenso !== '') {
+            finalExtenso += ' e ' + centsExtenso;
+        }
+
+        if (parseInt(integerPart) === 0 && cents > 0) {
+            finalExtenso = centsExtenso;
+        } else if (parseInt(integerPart) === 0 && cents === 0) {
+            finalExtenso = 'zero reais';
+        }
+
+        return finalExtenso.charAt(0).toUpperCase() + finalExtenso.slice(1);
+    }
+
+</script>
+</body>
+</html>
